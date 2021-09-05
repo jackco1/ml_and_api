@@ -1,59 +1,77 @@
 import numpy as np
 import cv2
 
-confidenceThreshold = 0.8 #confidence threshold of boxes to pick up
-NMSThreshold = 0.3
+def annotateImages():
+    confidenceThreshold = 0.8 #confidence threshold of boxes to pick up
+    NMSThreshold = 0.3
 
-modelConfiguration = 'cfg/yolov3.cfg'
-modelWeights = 'yolov3.weights'
+    modelConfiguration = 'cfg/yolov3.cfg'
+    modelWeights = 'yolov3.weights'
 
-labelsPath = 'coco.names'
-labels = open(labelsPath).read().strip().split('\n')
+    labelsPath = 'coco.names'
+    labels = open(labelsPath).read().strip().split('\n')
 
-np.random.seed(10)
-COLORS = np.random.randint(0, 255, size=(len(labels), 3), dtype="uint8")
+    np.random.seed(10)
+    COLORS = np.random.randint(0, 255, size=(len(labels), 3), dtype="uint8")
 
-net = cv2.dnn.readNetFromDarknet(modelConfiguration, modelWeights)
+    net = cv2.dnn.readNetFromDarknet(modelConfiguration, modelWeights)
 
-image = cv2.imread('images/cat1.png')
-(H, W) = image.shape[:2]
+    imageFiles = ['./images/cat.jpg', './images/dog.jpg', './images.cat1.png']
 
-#Determine output layer names
-layerName = net.getLayerNames()
-layerName = [layerName[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+    for imagePath in imageFiles:
+        image = cv2.imread(imagePath)
+        (H, W) = image.shape[:2]
 
-blob = cv2.dnn.blobFromImage(image, 1 / 255.0, (416, 416), swapRB = True, crop = False)
-net.setInput(blob)
-layersOutputs = net.forward(layerName)
+        #Determine output layer names
+        layerName = net.getLayerNames()
+        layerName = [layerName[i[0] - 1] for i in net.getUnconnectedOutLayers()]
 
-boxes = []
-confidences = []
-classIDs = []
+        blob = cv2.dnn.blobFromImage(image, 1 / 255.0, (416, 416), swapRB = True, crop = False)
+        net.setInput(blob)
+        layersOutputs = net.forward(layerName)
 
-for output in layersOutputs:
-    for detection in output:
-        scores = detection[5:]
-        classID = np.argmax(scores)
-        confidence = scores[classID]
-        if confidence > confidenceThreshold:
-            box = detection[0:4] * np.array([W, H, W, H])
-            (centerX, centerY,  width, height) = box.astype('int')
-            x = int(centerX - (width/2))
-            y = int(centerY - (height/2))
+        boxes = []
+        confidences = []
+        classIDs = []
 
-            boxes.append([x, y, int(width), int(height)])
-            confidences.append(float(confidence))
-            classIDs.append(classID)
+        for output in layersOutputs:
+            for detection in output:
+                scores = detection[5:]
+                classID = np.argmax(scores)
+                confidence = scores[classID]
+                if confidence > confidenceThreshold:
+                    box = detection[0:4] * np.array([W, H, W, H])
+                    (centerX, centerY,  width, height) = box.astype('int')
+                    x = int(centerX - (width/2))
+                    y = int(centerY - (height/2))
 
-#Apply Non Maxima Suppression
-detectionNMS = cv2.dnn.NMSBoxes(boxes, confidences, confidenceThreshold, NMSThreshold)
+                    boxes.append([x, y, int(width), int(height)])
+                    confidences.append(float(confidence))
+                    classIDs.append(classID)
 
-#ensure detections exist
-if len(detectionNMS) > 0:
-    for i in detectionNMS.flatten():
-        print(labels[classIDs[i]]) #label for class id
-        print(confidences[i]) #confidence rating
-        print(boxes[i][0]) #x coordinate (top left)
-        print(boxes[i][1]) #y coordinate (top left)
-        print(boxes[i][2]) #width
-        print(boxes[i][3]) #height
+        #Apply Non Maxima Suppression
+        detectionNMS = cv2.dnn.NMSBoxes(boxes, confidences, confidenceThreshold, NMSThreshold)
+
+        outputs = {}
+
+        #ensure detections exist
+        if len(detectionNMS) > 0:
+            outputs['detections'] = {}
+            outputs['detections']['image'] = {}
+            outputs['detections']['image']['annotations'] = []
+            num = 0
+            for i in detectionNMS.flatten():
+                outputs['detections']['image'] = 'image ' + str(num)
+                annotation = {}
+                annotation['class'] = labels[classIDs[i]] #label for class id
+                annotation['cf'] = confidences[i] #confidence rating
+                annotation['x'] = boxes[i][0] #x coordinate (top left)
+                annotation['y'] = boxes[i][1] #y coordinate (top left)
+                annotation['width'] = boxes[i][2] #width
+                annotation['height'] = boxes[i][3] #height
+                outputs['detections']['image']['annotations'].append(annotation)
+                num = num + 1
+        else:
+            outputs['detections']['image'] = 'No detections'
+
+        return outputs
